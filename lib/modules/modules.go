@@ -409,6 +409,7 @@ func (p *defaultModules) Features() Features {
 		DB:                 true,
 		App:                true,
 		Desktop:            true,
+		OIDC:              true,
 		AutomaticUpgrades:  p.automaticUpgrades,
 		JoinActiveSessions: true,
 		SupportType:        proto.SupportType_SUPPORT_TYPE_FREE,
