@@ -158,6 +158,7 @@ func NewAPIServer(config *APIConfig) (http.Handler, error) {
 	srv.POST("/:version/configuration/static_tokens", srv.WithAuth(srv.setStaticTokens))
 
 	// SSO validation handlers
+	srv.POST("/:version/oidc/requests/validate", srv.WithAuth(srv.validateOIDCAuthCallback))
 	srv.POST("/:version/github/requests/validate", srv.WithAuth(srv.validateGithubAuthCallback))
 
 	// Audit logs AKA events
@@ -619,6 +620,40 @@ func (s *APIServer) rotateExternalCertAuthority(auth ClientI, w http.ResponseWri
 		return nil, trace.Wrap(err)
 	}
 	return message("ok"), nil
+}
+
+func (s *APIServer) validateOIDCAuthCallback(auth ClientI, w http.ResponseWriter, r *http.Request, p httprouter.Params, version string) (interface{}, error) {
+	var req *ValidateOIDCAuthCallbackReq
+	if err := httplib.ReadJSON(r, &req); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	response, err := auth.ValidateOIDCAuthCallback(r.Context(), req.Query)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	raw := OIDCAuthRawResponse{
+		Username: response.Username,
+		Identity: response.Identity,
+		Cert:     response.Cert,
+		TLSCert:  response.TLSCert,
+		Req:      response.Req,
+	}
+	if response.Session != nil {
+		rawSession, err := services.MarshalWebSession(response.Session, services.WithVersion(version))
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		raw.Session = rawSession
+	}
+	raw.HostSigners = make([]json.RawMessage, len(response.HostSigners))
+	for i, ca := range response.HostSigners {
+		data, err := services.MarshalCertAuthority(ca, services.WithVersion(version))
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		raw.HostSigners[i] = data
+	}
+	return &raw, nil
 }
 
 // validateGithubAuthCallbackReq is a request to validate Github OAuth2 callback

@@ -430,6 +430,15 @@ func NewServer(cfg *InitConfig, opts ...ServerOption) (*Server, error) {
 		)
 	}
 
+	oas, err := NewOIDCAuthService(&OIDCAuthServiceConfig{
+		Auth:    &as,
+		Emitter: as.emitter,
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	as.SetOIDCService(oas)
+
 	// Add in a login hook for generating state during user login.
 	ulsGenerator, err := userloginstate.NewGenerator(userloginstate.GeneratorConfig{
 		Log:         log,
