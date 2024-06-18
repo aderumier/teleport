@@ -5518,6 +5518,8 @@ func (a *Server) syncDesktopsLimitAlert(ctx context.Context) {
 
 // desktopsLimitExceeded checks if number of non-AD desktops exceeds limit for OSS distribution. Returns always false for Enterprise.
 func (a *Server) desktopsLimitExceeded(ctx context.Context) (bool, error) {
+	return false, nil
+
 	if modules.GetModules().IsEnterpriseBuild() {
 		return false, nil
 	}
