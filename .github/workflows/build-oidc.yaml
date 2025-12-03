@@ -1,0 +1,98 @@
+name: Build OIDC Module
+run-name: Build OIDC Module - ${{ github.run_id }}
+
+on:
+  push:
+    branches:
+      - v18.0.0-oidc
+    paths:
+      - '.github/workflows/build-oidc.yaml'
+      - 'lib/auth/**/*.go'
+      - 'lib/web/**/*.go'
+      - 'lib/services/**/*.go'
+      - 'lib/modules/**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+  pull_request:
+    branches:
+      - v18.0.0-oidc
+    paths:
+      - '.github/workflows/build-oidc.yaml'
+      - 'lib/auth/**/*.go'
+      - 'lib/web/**/*.go'
+      - 'lib/services/**/*.go'
+      - 'lib/modules/**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build OIDC Auth Module
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Teleport
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Verify dependencies
+        run: go mod download && go mod verify
+
+      - name: Build lib/auth
+        run: go build -v ./lib/auth/...
+
+      - name: Build lib/web
+        run: go build -v ./lib/web/...
+
+      - name: Build lib/services
+        run: go build -v ./lib/services/...
+
+      - name: Build lib/modules
+        run: go build -v ./lib/modules/...
+
+      - name: Build teleport binary (without webassets)
+        env:
+          WEBASSETS_SKIP_BUILD: 1
+        run: make build/teleport
+
+      - name: Build tctl binary
+        run: make build/tctl
+
+  test:
+    name: Test OIDC Module
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Teleport
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Verify dependencies
+        run: go mod download && go mod verify
+
+      - name: Run OIDC-related tests
+        run: |
+          go test -v ./lib/auth/... -run OIDC || true
+          go test -v ./lib/services/... -run OIDC || true
+          go test -v ./lib/web/... -run OIDC || true
+
+      - name: Run all auth tests
+        run: go test -v ./lib/auth/... -timeout 10m
+

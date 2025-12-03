@@ -932,6 +932,12 @@ func (h *Handler) bindDefaultEndpoints() {
 	h.GET("/webapi/sites/:site/kubernetes/resources", h.WithClusterAuth(h.clusterKubeResourcesGet))
 
 	// Github connector handlers
+	// OIDC related callback handlers
+	h.GET("/webapi/oidc/login/web", h.WithRedirect(h.oidcLoginWeb))
+	h.GET("/webapi/oidc/callback", h.WithMetaRedirect(h.oidcCallback))
+	h.POST("/webapi/oidc/login/console", h.WithLimiter(h.oidcLoginConsole))
+
+	// Github connector handlers
 	h.GET("/webapi/github/login/web", h.WithRedirect(h.githubLoginWeb))
 	h.GET("/webapi/github/callback", h.WithMetaRedirect(h.githubCallback))
 	h.POST("/webapi/github/login/console", h.WithLimiter(h.githubLoginConsole))
@@ -2194,6 +2200,150 @@ func (h *Handler) githubCallback(w http.ResponseWriter, r *http.Request, p httpr
 		TLSCert:           response.TLSCert,
 		HostSigners:       response.HostSigners,
 		FIPS:              h.cfg.FIPS,
+	})
+	if err != nil {
+		logger.ErrorContext(r.Context(), "Error constructing ssh response", "error", err)
+		return client.LoginFailedRedirectURL
+	}
+
+	return redirectURL.String()
+}
+
+func (h *Handler) oidcLoginWeb(w http.ResponseWriter, r *http.Request, p httprouter.Params) string {
+	logger := h.logger.With("auth", "oidc")
+	logger.DebugContext(r.Context(), "Web login start")
+
+	req, err := ParseSSORequestParams(r)
+	if err != nil {
+		logger.ErrorContext(r.Context(), "Failed to extract SSO parameters from request", "error", err)
+		return client.LoginFailedRedirectURL
+	}
+
+	remoteAddr, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		logger.ErrorContext(r.Context(), "Failed to parse request remote address", "error", err)
+		return client.LoginFailedRedirectURL
+	}
+
+	response, err := h.cfg.ProxyClient.CreateOIDCAuthRequest(r.Context(), types.OIDCAuthRequest{
+		CSRFToken:         req.CSRFToken,
+		ConnectorID:       req.ConnectorID,
+		CreateWebSession:  true,
+		ClientRedirectURL: req.ClientRedirectURL,
+		ClientLoginIP:     remoteAddr,
+		ClientUserAgent:   r.UserAgent(),
+		CheckUser:         true,
+		ProxyAddress:      r.Host,
+	})
+	if err != nil {
+		logger.ErrorContext(r.Context(), "Error creating auth request", "error", err)
+		return client.LoginFailedRedirectURL
+	}
+
+	return response.RedirectURL
+}
+
+func (h *Handler) oidcLoginConsole(w http.ResponseWriter, r *http.Request, p httprouter.Params) (interface{}, error) {
+	logger := h.logger.With("auth", "oidc")
+	logger.DebugContext(r.Context(), "Console login start")
+
+	req := new(client.SSOLoginConsoleReq)
+	if err := httplib.ReadResourceJSON(r, req); err != nil {
+		logger.ErrorContext(r.Context(), "Error reading json", "error", err)
+		return nil, trace.AccessDenied(SSOLoginFailureMessage)
+	}
+
+	if err := req.CheckAndSetDefaults(); err != nil {
+		logger.ErrorContext(r.Context(), "Missing request parameters", "error", err)
+		return nil, trace.AccessDenied(SSOLoginFailureMessage)
+	}
+
+	remoteAddr, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		logger.ErrorContext(r.Context(), "Failed to parse request remote address", "error", err)
+		return nil, trace.AccessDenied(SSOLoginFailureMessage)
+	}
+
+	response, err := h.cfg.ProxyClient.CreateOIDCAuthRequest(r.Context(), types.OIDCAuthRequest{
+		ConnectorID:             req.ConnectorID,
+		SshPublicKey:            req.SSHPubKey,
+		TlsPublicKey:            req.TLSPubKey,
+		SshAttestationStatement: req.SSHAttestationStatement.ToProto(),
+		TlsAttestationStatement: req.TLSAttestationStatement.ToProto(),
+		CertTTL:                 req.CertTTL,
+		ClientRedirectURL:       req.RedirectURL,
+		Compatibility:           req.Compatibility,
+		RouteToCluster:          req.RouteToCluster,
+		KubernetesCluster:       req.KubernetesCluster,
+		ProxyAddress:            r.Host,
+		ClientLoginIP:           remoteAddr,
+		CheckUser:               true,
+	})
+	if err != nil {
+		logger.ErrorContext(r.Context(), "Failed to create OIDC auth request", "error", err)
+		return nil, trace.AccessDenied(SSOLoginFailureMessage)
+	}
+
+	return &client.SSOLoginConsoleResponse{
+		RedirectURL: response.RedirectURL,
+	}, nil
+}
+
+func (h *Handler) oidcCallback(w http.ResponseWriter, r *http.Request, p httprouter.Params) string {
+	logger := h.logger.With("auth", "oidc")
+	logger.DebugContext(r.Context(), "Callback start", "query", r.URL.Query())
+
+	response, err := h.cfg.ProxyClient.ValidateOIDCAuthCallback(r.Context(), r.URL.Query())
+	if err != nil {
+		logger.ErrorContext(r.Context(), "Error while processing callback", "error", err)
+
+		if requestID := r.URL.Query().Get("state"); requestID != "" {
+			if request, errGet := h.cfg.ProxyClient.GetOIDCAuthRequest(r.Context(), requestID); errGet == nil && !request.CreateWebSession {
+				if redURL, errEnc := RedirectURLWithError(request.ClientRedirectURL, err); errEnc == nil {
+					return redURL.String()
+				}
+			}
+		}
+
+		if errors.Is(err, auth.ErrOIDCNoRoles) {
+			return client.LoginFailedUnauthorizedRedirectURL
+		}
+
+		return client.LoginFailedBadCallbackRedirectURL
+	}
+
+	if response.Req.CreateWebSession {
+		logger.InfoContext(r.Context(), "Redirecting to web browser")
+
+		res := &SSOCallbackResponse{
+			CSRFToken:         response.Req.CSRFToken,
+			Username:          response.Username,
+			SessionName:       response.Session.GetName(),
+			ClientRedirectURL: response.Req.ClientRedirectURL,
+		}
+
+		if err := SSOSetWebSessionAndRedirectURL(w, r, res, true); err != nil {
+			logger.ErrorContext(r.Context(), "Error setting web session", "error", err)
+			return client.LoginFailedRedirectURL
+		}
+
+		return res.ClientRedirectURL
+	}
+
+	logger.InfoContext(r.Context(), "Callback redirecting to console login")
+	if len(response.Req.SSHPubKey)+len(response.Req.TLSPubKey) == 0 {
+		logger.ErrorContext(r.Context(), "Not a web or console login request")
+		return client.LoginFailedRedirectURL
+	}
+
+	redirectURL, err := ConstructSSHResponse(AuthParams{
+		ClientRedirectURL: response.Req.ClientRedirectURL,
+		Username:          response.Username,
+		Identity:          response.Identity,
+		Session:           response.Session,
+		Cert:              response.Cert,
+		TLSCert:           response.TLSCert,
+		HostSigners:       response.HostSigners,
 	})
 	if err != nil {
 		logger.ErrorContext(r.Context(), "Error constructing ssh response", "error", err)

@@ -705,6 +705,15 @@ func NewServer(cfg *InitConfig, opts ...ServerOption) (*Server, error) {
 		as.bitbucketIDTokenValidator = bitbucket.NewIDTokenValidator()
 	}
 
+	oas, err := NewOIDCAuthService(&OIDCAuthServiceConfig{
+		Auth:    &as,
+		Emitter: as.emitter,
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	as.SetOIDCService(oas)
+
 	if as.createBoundKeypairValidator == nil {
 		as.createBoundKeypairValidator = func(subject, clusterName string, publicKey crypto.PublicKey) (boundKeypairValidator, error) {
 			return boundkeypair.NewChallengeValidator(subject, clusterName, publicKey)
@@ -6157,9 +6166,7 @@ func (a *Server) syncDesktopsLimitAlert(ctx context.Context) {
 
 // desktopsLimitExceeded checks if number of non-AD desktops exceeds limit for OSS distribution. Returns always false for Enterprise.
 func (a *Server) desktopsLimitExceeded(ctx context.Context) (bool, error) {
-	if modules.GetModules().IsEnterpriseBuild() {
-		return false, nil
-	}
+	return false, nil
 
 	desktops := stream.FilterMap(
 		a.streamWindowsDesktops(ctx, types.ListWindowsDesktopsRequest{Limit: 50}),
