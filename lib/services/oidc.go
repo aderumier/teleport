@@ -19,13 +19,54 @@
 package services
 
 import (
+	"encoding/json"
 	"net/url"
 
 	"github.com/gravitational/trace"
+	"github.com/zitadel/oidc/v3/pkg/oidc"
 
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/lib/utils"
 )
+
+// OIDCClaimsToTraits converts OIDC-style claims into teleport-specific trait format
+func OIDCClaimsToTraits(claims oidc.Claims) map[string][]string {
+	traits := make(map[string][]string)
+
+	// Convert claims to map
+	claimsMap := make(map[string]interface{})
+	if claimsMapTyped, ok := claims.(map[string]interface{}); ok {
+		claimsMap = claimsMapTyped
+	} else {
+		// Try to marshal and unmarshal if it's a struct
+		data, err := json.Marshal(claims)
+		if err == nil {
+			json.Unmarshal(data, &claimsMap)
+		}
+	}
+
+	for claimName, claimValue := range claimsMap {
+		switch v := claimValue.(type) {
+		case string:
+			traits[claimName] = []string{v}
+		case []string:
+			traits[claimName] = v
+		case []interface{}:
+			// Convert []interface{} to []string
+			strs := make([]string, 0, len(v))
+			for _, item := range v {
+				if str, ok := item.(string); ok {
+					strs = append(strs, str)
+				}
+			}
+			if len(strs) > 0 {
+				traits[claimName] = strs
+			}
+		}
+	}
+
+	return traits
+}
 
 // GetRedirectURL gets a redirect URL for the given connector. If the connector
 // has a redirect URL which matches the host of the given Proxy address, then
