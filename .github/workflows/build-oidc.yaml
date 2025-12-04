@@ -7,9 +7,11 @@ on:
   push:
     branches:
       - v18.0.0-oidc
+      - v18.4.2-oidc
   pull_request:
     branches:
       - v18.0.0-oidc
+      - v18.4.2-oidc
   workflow_dispatch:
 
 jobs:
