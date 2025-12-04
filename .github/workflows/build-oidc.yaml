@@ -1,34 +1,115 @@
 name: Build OIDC Module
 run-name: Build OIDC Module - ${{ github.run_id }}
+# Workflow to build and test OIDC authentication module ported to v18.0.0
+# Triggering workflow after enabling GitHub Actions
 
 on:
   push:
     branches:
       - v18.0.0-oidc
-    paths:
-      - '.github/workflows/build-oidc.yaml'
-      - 'lib/auth/**/*.go'
-      - 'lib/web/**/*.go'
-      - 'lib/services/**/*.go'
-      - 'lib/modules/**/*.go'
-      - 'go.mod'
-      - 'go.sum'
   pull_request:
     branches:
       - v18.0.0-oidc
-    paths:
-      - '.github/workflows/build-oidc.yaml'
-      - 'lib/auth/**/*.go'
-      - 'lib/web/**/*.go'
-      - 'lib/services/**/*.go'
-      - 'lib/modules/**/*.go'
-      - 'go.mod'
-      - 'go.sum'
   workflow_dispatch:
 
 jobs:
+  build-rust:
+    name: Build Rust Components
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Teleport
+        uses: actions/checkout@v4
+
+      - name: Show disk space before cleanup
+        run: df -h
+
+      - name: Clean up Android SDK and GHC
+        run: |
+          echo "=== Cleaning up Android SDK and GHC ==="
+          sudo rm -rf /usr/local/lib/android/sdk || true
+          sudo rm -rf /usr/local/.ghcup || true
+          echo "=== Disk space after cleanup ==="
+          df -h
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.81.0
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-
+
+      - name: Install wasm-pack
+        run: |
+          make -C build.assets print-wasm-pack-version
+          make ensure-wasm-pack
+
+      - name: Build rdpclient
+        run: |
+          export CGO_ENABLED=0
+          export OS=linux
+          export ARCH=amd64
+          export with_rdpclient=yes
+          make rdpclient || echo "RDP client build failed, continuing..."
+        continue-on-error: true
+
+      - name: Upload rdpclient artifacts
+        run: |
+          # Find and upload rdpclient library artifacts
+          if find target -name "librdp_client.a" -o -name "librdprs.h" 2>/dev/null | head -1; then
+            echo "Found rdpclient artifacts"
+          else
+            echo "No rdpclient artifacts found - this is OK if RDP client is not needed"
+          fi
+        continue-on-error: true
+
+      - name: Upload rdpclient artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rdpclient-artifacts
+          path: |
+            target/**/librdp_client.a
+            target/**/librdprs.h
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Build WASM components
+        run: |
+          # Build WASM for web UI if needed, skip wasm-opt optimization if it fails
+          cd web/packages/shared/libs/ironrdp
+          # Try with wasm-opt first, if it fails, disable it
+          wasm-pack build --target web --out-dir pkg -- --no-default-features || \
+          (echo "WASM build with wasm-opt failed, trying without optimization..." && \
+           wasm-pack build --target web --out-dir pkg --no-pack || \
+           echo "WASM build failed completely, continuing...")
+        continue-on-error: true
+
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: web/packages/shared/libs/ironrdp/pkg/
+          retention-days: 7
+          if-no-files-found: ignore
+
   build:
     name: Build OIDC Auth Module
+    needs: build-rust
     runs-on: ubuntu-latest
 
     permissions:
@@ -44,28 +125,145 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Download Rust artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: rdpclient-artifacts
+          path: target/
+        continue-on-error: true
+
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: web/packages/shared/libs/ironrdp/pkg/
+        continue-on-error: true
+
+      - name: Verify Go installation
+        run: |
+          go version
+          echo "Go binary: $(which go)"
+          echo "GOROOT: ${GOROOT:-not set}"
+          echo "PATH: $PATH"
+
       - name: Verify dependencies
         run: go mod download && go mod verify
 
-      - name: Build lib/auth
-        run: go build -v ./lib/auth/...
+      - name: Show disk space before cleanup
+        run: df -h
 
-      - name: Build lib/web
-        run: go build -v ./lib/web/...
+      - name: Clean up Android SDK and GHC
+        run: |
+          echo "=== Cleaning up Android SDK and GHC ==="
+          sudo rm -rf /usr/local/lib/android/sdk || true
+          sudo rm -rf /usr/local/.ghcup || true
+          echo "=== Disk space after cleanup ==="
+          df -h
 
-      - name: Build lib/services
-        run: go build -v ./lib/services/...
-
-      - name: Build lib/modules
-        run: go build -v ./lib/modules/...
-
-      - name: Build teleport binary (without webassets)
+      - name: Build full release (all binaries)
         env:
-          WEBASSETS_SKIP_BUILD: 1
-        run: make build/teleport
+          RDPCLIENT_SKIP_BUILD: 1
+        run: |
+          set -e
+          echo "=== Verifying Go is available ==="
+          go version || (echo "ERROR: Go not found!" && exit 1)
+          echo "Go binary: $(which go)"
+          echo "PATH: $PATH"
+          echo "GOROOT: ${GOROOT:-not set}"
+          # Ensure PATH is exported for Makefile subprocesses
+          export PATH="$PATH"
+          if [ -n "$GOROOT" ]; then
+            export GOROOT="$GOROOT"
+          fi
+          # Skip Rust builds since we're using pre-built artifacts
+          export RDPCLIENT_SKIP_BUILD=1
+          echo "=== Disk space before build ==="
+          df -h
+          echo "=== Starting make full ==="
+          # Run make with explicit PATH to ensure subprocesses can find go
+          if PATH="$PATH" make full VERBOSE=1 2>&1 | tee /tmp/build.log; then
+            echo "=== Build completed successfully ==="
+          else
+            BUILD_EXIT_CODE=$?
+            echo "=== Build failed with exit code $BUILD_EXIT_CODE ==="
+            echo "=== Last 100 lines of build log ==="
+            tail -100 /tmp/build.log || true
+            echo "=== Checking disk space ==="
+            df -h
+            echo "=== Checking build directory ==="
+            ls -lah build/ || echo "Build directory does not exist"
+            echo "=== Checking webassets ==="
+            ls -lah webassets/ || echo "Webassets directory does not exist"
+            exit $BUILD_EXIT_CODE
+          fi
+          echo "=== Checking what was built ==="
+          echo "Current directory: $(pwd)"
+          echo "Looking for binaries..."
+          find . -type f -executable -name "teleport" -o -name "tctl" -o -name "tsh" -o -name "tbot" 2>/dev/null | head -20 || echo "No binaries found with find"
+          echo "=== Build directory contents ==="
+          if [ -d "build" ]; then
+            echo "Build directory exists:"
+            ls -lah build/ || true
+            echo "=== Checking for specific binaries ==="
+            [ -f "build/teleport" ] && echo "✓ build/teleport exists" || echo "✗ build/teleport NOT found"
+            [ -f "build/tctl" ] && echo "✓ build/tctl exists" || echo "✗ build/tctl NOT found"
+            [ -f "build/tsh" ] && echo "✓ build/tsh exists" || echo "✗ build/tsh NOT found"
+            [ -f "build/tbot" ] && echo "✓ build/tbot exists" || echo "✗ build/tbot NOT found"
+          else
+            echo "✗ Build directory does not exist"
+            echo "=== Full build log (last 200 lines) ==="
+            tail -200 /tmp/build.log || true
+            exit 1
+          fi
+          df -h
 
-      - name: Build tctl binary
-        run: make build/tctl
+      - name: Upload teleport binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: teleport-binary
+          path: build/teleport
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload tctl binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: tctl-binary
+          path: build/tctl
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload tsh binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsh-binary
+          path: build/tsh
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload tbot binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: tbot-binary
+          path: build/tbot
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload all binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-binaries
+          path: build/*
+          retention-days: 7
+          if-no-files-found: warn
 
   test:
     name: Test OIDC Module

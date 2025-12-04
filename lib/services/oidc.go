@@ -33,16 +33,12 @@ import (
 func OIDCClaimsToTraits(claims oidc.Claims) map[string][]string {
 	traits := make(map[string][]string)
 
-	// Convert claims to map
+	// Convert claims to map by marshaling and unmarshaling
+	// oidc.Claims is an interface, so we need to serialize it first
 	claimsMap := make(map[string]interface{})
-	if claimsMapTyped, ok := claims.(map[string]interface{}); ok {
-		claimsMap = claimsMapTyped
-	} else {
-		// Try to marshal and unmarshal if it's a struct
-		data, err := json.Marshal(claims)
-		if err == nil {
-			json.Unmarshal(data, &claimsMap)
-		}
+	data, err := json.Marshal(claims)
+	if err == nil {
+		json.Unmarshal(data, &claimsMap)
 	}
 
 	for claimName, claimValue := range claimsMap {

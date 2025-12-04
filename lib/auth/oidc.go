@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,7 +34,6 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/client"
 	"github.com/zitadel/oidc/v3/pkg/client/rp"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
-	"golang.org/x/oauth2"
 
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/api/constants"
@@ -177,13 +177,16 @@ func (a *Server) ValidateOIDCAuthCallback(ctx context.Context, q url.Values) (*a
 	return resp, trace.Wrap(err)
 }
 
+// getClaimsFunType is the type for the getClaims function
+type getClaimsFunType func(ctx context.Context, rpClient rp.RelyingParty, connector types.OIDCConnector, code string) (oidc.Claims, error)
+
 // OIDCAuthService implements OIDC authentication using zitadel/oidc/v3
 type OIDCAuthService struct {
 	auth         *Server
 	emitter      apievents.Emitter
 	clients      map[string]*oidcClient
 	lock         sync.Mutex
-	getClaimsFun func(ctx context.Context, rpClient rp.RelyingParty, connector types.OIDCConnector, code string) (oidc.Claims, error)
+	getClaimsFun getClaimsFunType
 }
 
 type OIDCAuthServiceConfig struct {
@@ -399,7 +402,13 @@ func (oas *OIDCAuthService) CreateOIDCAuthRequest(ctx context.Context, req types
 	req.StateToken = stateToken
 
 	// Build authorization URL
-	authURL := rp.AuthURL(stateToken, rpClient, rp.WithPrompt(oidc.SplitPrompt(connector.GetPrompt()...))...)
+	var opts []rp.AuthURLOpt
+	if prompt := connector.GetPrompt(); prompt != "" {
+		// Split prompt string by space and use WithPrompt
+		promptFields := strings.Fields(prompt)
+		opts = append(opts, rp.WithPrompt(promptFields...))
+	}
+	authURL := rp.AuthURL(stateToken, rpClient, opts...)
 	req.RedirectURL = authURL
 
 	// if the connector has an Authentication Context Class Reference (ACR) value set,
@@ -416,7 +425,7 @@ func (oas *OIDCAuthService) CreateOIDCAuthRequest(ctx context.Context, req types
 		req.RedirectURL = u.String()
 	}
 
-	log.Debugf("OIDC redirect URL: %v.", req.RedirectURL)
+	oas.auth.logger.DebugContext(ctx, "OIDC redirect URL", "url", req.RedirectURL)
 
 	err = oas.auth.Services.CreateOIDCAuthRequest(ctx, req, defaults.OIDCAuthRequestTTL)
 	if err != nil {
@@ -452,7 +461,7 @@ func (oas *OIDCAuthService) ValidateOIDCAuthCallback(ctx context.Context, q url.
 		attributes, err := apievents.EncodeMap(claims)
 		if err != nil {
 			event.Status.UserMessage = fmt.Sprintf("Failed to encode identity attributes: %v", err.Error())
-			log.WithError(err).Debug("Failed to encode identity attributes.")
+			oas.auth.logger.DebugContext(ctx, "Failed to encode identity attributes", "error", err)
 		} else {
 			event.IdentityAttributes = attributes
 		}
@@ -468,7 +477,7 @@ func (oas *OIDCAuthService) ValidateOIDCAuthCallback(ctx context.Context, q url.
 		event.Status.UserMessage = err.Error()
 
 		if err := oas.emitter.EmitAuditEvent(ctx, event); err != nil {
-			log.WithError(err).Warn("Failed to emit OIDC login failed event.")
+			oas.auth.logger.WarnContext(ctx, "Failed to emit OIDC login failed event", "error", err)
 		}
 
 		return nil, trace.Wrap(err)
@@ -482,7 +491,7 @@ func (oas *OIDCAuthService) ValidateOIDCAuthCallback(ctx context.Context, q url.
 	event.Status.Success = true
 
 	if err := oas.emitter.EmitAuditEvent(ctx, event); err != nil {
-		log.WithError(err).Warn("Failed to emit OIDC login event.")
+		oas.auth.logger.WarnContext(ctx, "Failed to emit OIDC login event", "error", err)
 	}
 
 	return auth, nil
@@ -492,8 +501,9 @@ func checkEmailVerifiedClaim(claims oidc.Claims) error {
 	claimName := "email_verified"
 	unverifiedErr := trace.AccessDenied("email not verified by OIDC provider")
 
-	// Try to get email_verified from claims
-	if claimsMap, ok := claims.(map[string]interface{}); ok {
+	// Convert claims to map first
+	claimsMap := claimsToMap(claims)
+	if len(claimsMap) > 0 {
 		if emailVerified, ok := claimsMap[claimName]; ok {
 			switch v := emailVerified.(type) {
 			case string:
@@ -568,7 +578,7 @@ func (oas *OIDCAuthService) validateOIDCAuthCallback(ctx context.Context, diagCt
 	}
 	diagCtx.Info.OIDCClaims = types.OIDCClaims(claimsToMap(claims))
 
-	log.Debugf("OIDC claims: %v.", claims)
+	oas.auth.logger.DebugContext(ctx, "OIDC claims", "claims", claims)
 	if !connector.GetAllowUnverifiedEmail() {
 		if err := checkEmailVerifiedClaim(claims); err != nil {
 			return nil, trace.Wrap(err, "OIDC provider did not verify email.")
@@ -581,7 +591,7 @@ func (oas *OIDCAuthService) validateOIDCAuthCallback(ctx context.Context, diagCt
 		if err != nil {
 			return nil, trace.Wrap(err, "OIDC ACR validation failure.")
 		}
-		log.Debugf("OIDC ACR values %q successfully validated.", acrValue)
+		oas.auth.logger.DebugContext(ctx, "OIDC ACR values successfully validated", "acr", acrValue)
 	}
 
 	// Extract identity from claims
@@ -595,16 +605,16 @@ func (oas *OIDCAuthService) validateOIDCAuthCallback(ctx context.Context, diagCt
 		Email:     ident.Email,
 		ExpiresAt: ident.ExpiresAt,
 	}
-	log.Debugf("OIDC user %q expires at: %v.", ident.Email, ident.ExpiresAt)
+	oas.auth.logger.DebugContext(ctx, "OIDC user expires", "email", ident.Email, "expires_at", ident.ExpiresAt)
 
 	if len(connector.GetClaimsToRoles()) == 0 {
 		oauthErr := trace.BadParameter("no claims to roles mapping, check connector documentation")
 		return nil, trace.WithUserMessage(oauthErr, "Claims-to-roles mapping is empty, SSO user will never have any roles.")
 	}
-	log.Debugf("Applying %v OIDC claims to roles mappings.", len(connector.GetClaimsToRoles()))
+	oas.auth.logger.DebugContext(ctx, "Applying OIDC claims to roles mappings", "count", len(connector.GetClaimsToRoles()))
 	diagCtx.Info.OIDCClaimsToRoles = connector.GetClaimsToRoles()
 
-	params, err := oas.calculateOIDCUser(diagCtx, connector, claims, ident, req)
+	params, err := oas.calculateOIDCUser(ctx, diagCtx, connector, claims, ident, req)
 	if err != nil {
 		return nil, trace.Wrap(err, "Failed to calculate user attributes.")
 	}
@@ -659,27 +669,15 @@ func (oas *OIDCAuthService) validateOIDCAuthCallback(ctx context.Context, diagCt
 		resp.Session = session
 	}
 
-	sshPublicKey, tlsPublicKey, err := authclient.UserPublicKeys(
-		req.PublicKey,
-		req.SshPublicKey,
-		req.TlsPublicKey,
-	)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	sshAttestationStatement, tlsAttestationStatement := authclient.UserAttestationStatements(
-		hardwarekey.AttestationStatementFromProto(req.AttestationStatement),
-		hardwarekey.AttestationStatementFromProto(req.SshAttestationStatement),
-		hardwarekey.AttestationStatementFromProto(req.TlsAttestationStatement),
-	)
-	if len(sshPublicKey)+len(tlsPublicKey) > 0 {
+	// If a public key was provided, sign it and return a certificate.
+	if len(req.SshPublicKey) != 0 || len(req.TlsPublicKey) != 0 {
 		sshCert, tlsCert, err := oas.auth.CreateSessionCerts(ctx, &SessionCertsRequest{
 			UserState:               user,
 			SessionTTL:              params.SessionTTL,
-			SSHPubKey:               sshPublicKey,
-			TLSPubKey:               tlsPublicKey,
-			SSHAttestationStatement: sshAttestationStatement,
-			TLSAttestationStatement: tlsAttestationStatement,
+			SSHPubKey:               req.SshPublicKey,
+			TLSPubKey:               req.TlsPublicKey,
+			SSHAttestationStatement: hardwarekey.AttestationStatementFromProto(req.SshAttestationStatement),
+			TLSAttestationStatement: hardwarekey.AttestationStatementFromProto(req.TlsAttestationStatement),
 			Compatibility:           req.Compatibility,
 			RouteToCluster:          req.RouteToCluster,
 			KubernetesCluster:       req.KubernetesCluster,
@@ -689,7 +687,7 @@ func (oas *OIDCAuthService) validateOIDCAuthCallback(ctx context.Context, diagCt
 			return nil, trace.Wrap(err, "Failed to create session certificate.")
 		}
 
-		clusterName, err := oas.auth.GetClusterName()
+		clusterName, err := oas.auth.GetClusterName(ctx)
 		if err != nil {
 			return nil, trace.Wrap(err, "Failed to obtain cluster name.")
 		}
@@ -714,7 +712,6 @@ func (oas *OIDCAuthService) validateOIDCAuthCallback(ctx context.Context, diagCt
 func OIDCAuthRequestFromProto(req *types.OIDCAuthRequest) authclient.OIDCAuthRequest {
 	return authclient.OIDCAuthRequest{
 		ConnectorID:       req.ConnectorID,
-		PublicKey:         req.PublicKey,
 		SSHPubKey:         req.SshPublicKey,
 		TLSPubKey:         req.TlsPublicKey,
 		CSRFToken:         req.CSRFToken,
@@ -759,10 +756,7 @@ func extractIdentityFromClaims(claims oidc.Claims) (*oidcIdentity, error) {
 }
 
 func claimsToMap(claims oidc.Claims) map[string]interface{} {
-	if claimsMap, ok := claims.(map[string]interface{}); ok {
-		return claimsMap
-	}
-	// Try to marshal and unmarshal if it's a struct
+	// oidc.Claims is an interface, so we need to marshal/unmarshal to convert to map
 	data, err := json.Marshal(claims)
 	if err != nil {
 		return make(map[string]interface{})
@@ -774,7 +768,7 @@ func claimsToMap(claims oidc.Claims) map[string]interface{} {
 	return result
 }
 
-func (oas *OIDCAuthService) calculateOIDCUser(diagCtx *SSODiagContext, connector types.OIDCConnector, claims oidc.Claims, ident *oidcIdentity, request *types.OIDCAuthRequest) (*CreateUserParams, error) {
+func (oas *OIDCAuthService) calculateOIDCUser(ctx context.Context, diagCtx *SSODiagContext, connector types.OIDCConnector, claims oidc.Claims, ident *oidcIdentity, request *types.OIDCAuthRequest) (*CreateUserParams, error) {
 	claimsMap := claimsToMap(claims)
 
 	username, err := usernameFromClaims(connector, claimsMap, ident)
@@ -796,13 +790,13 @@ func (oas *OIDCAuthService) calculateOIDCUser(diagCtx *SSODiagContext, connector
 	warnings, p.Roles = services.TraitsToRoles(connector.GetTraitMappings(), p.Traits)
 	if len(p.Roles) == 0 {
 		if len(warnings) != 0 {
-			log.WithField("connector", connector).Warnf("No roles mapped from claims. Warnings: %q", warnings)
+			oas.auth.logger.WarnContext(ctx, "No roles mapped from claims", "connector", connector.GetName(), "warnings", warnings)
 			diagCtx.Info.OIDCClaimsToRolesWarnings = &types.SSOWarnings{
 				Message:  "No roles mapped for the user",
 				Warnings: warnings,
 			}
 		} else {
-			log.WithField("connector", connector).Warnf("No roles mapped from claims.")
+			oas.auth.logger.WarnContext(ctx, "No roles mapped from claims", "connector", connector.GetName())
 			diagCtx.Info.OIDCClaimsToRolesWarnings = &types.SSOWarnings{
 				Message: "No roles mapped for the user. The mappings may contain typos.",
 			}
@@ -823,7 +817,7 @@ func (oas *OIDCAuthService) calculateOIDCUser(diagCtx *SSODiagContext, connector
 func (oas *OIDCAuthService) createOIDCUser(ctx context.Context, p *CreateUserParams, dryRun bool) (types.User, error) {
 	expires := oas.auth.GetClock().Now().UTC().Add(p.SessionTTL)
 
-	log.Debugf("Generating dynamic OIDC identity %v/%v with roles: %v. Dry run: %v.", p.ConnectorName, p.Username, p.Roles, dryRun)
+	oas.auth.logger.DebugContext(ctx, "Generating dynamic OIDC identity", "connector", p.ConnectorName, "username", p.Username, "roles", p.Roles, "dry_run", dryRun)
 	user := &types.UserV2{
 		Kind:    types.KindUser,
 		Version: types.V2,
@@ -872,8 +866,7 @@ func (oas *OIDCAuthService) createOIDCUser(ctx context.Context, p *CreateUserPar
 				"email in OIDC identity or remove local user and try again.", existingUser.GetName())
 		}
 
-		log.Debugf("Overwriting existing user %q created with %v connector %v.",
-			existingUser.GetName(), connectorRef.Type, connectorRef.ID)
+		oas.auth.logger.DebugContext(ctx, "Overwriting existing user", "user", existingUser.GetName(), "connector_type", connectorRef.Type, "connector_id", connectorRef.ID)
 
 		if _, err := oas.auth.UpsertUser(ctxtodo, user); err != nil {
 			return nil, trace.Wrap(err)
@@ -906,46 +899,67 @@ func (oas *OIDCAuthService) getClaims(ctx context.Context, rpClient rp.RelyingPa
 
 func getClaims(ctx context.Context, rpClient rp.RelyingParty, connector types.OIDCConnector, code string) (oidc.Claims, error) {
 	// Exchange authorization code for tokens
-	tokens, err := rp.CodeExchange(ctx, code, rpClient)
+	tokens, err := rp.CodeExchange[*oidc.IDTokenClaims](ctx, code, rpClient)
 	if err != nil {
 		return nil, trace.Wrap(err, "failed to exchange authorization code")
 	}
 
+	// Get issuer URL and create verifier
+	issuerURL := connector.GetIssuerURL()
+	dc, err := client.Discover(ctx, issuerURL, http.DefaultClient)
+	if err != nil {
+		return nil, trace.Wrap(err, "failed to discover provider")
+	}
+
+	ks := rp.NewRemoteKeySet(http.DefaultClient, dc.JwksURI)
+	verifier := rp.NewIDTokenVerifier(issuerURL, connector.GetClientID(), ks)
+
 	// Verify and extract ID token claims
-	idTokenClaims, err := rp.VerifyIDToken[*oidc.IDTokenClaims](ctx, tokens.IDToken(), rpClient)
+	idTokenClaims, err := rp.VerifyIDToken[*oidc.IDTokenClaims](ctx, tokens.IDToken, verifier)
 	if err != nil {
 		return nil, trace.Wrap(err, "unable to verify ID token")
 	}
 
-	log.Debugf("OIDC ID Token claims: %v.", idTokenClaims)
-
 	// Try to get UserInfo claims
-	userInfoClaims, err := getUserInfoClaims(ctx, rpClient, tokens.AccessToken())
+	userInfoClaims, err := getUserInfoClaims(ctx, connector, tokens.AccessToken)
 	if err != nil {
 		if trace.IsNotFound(err) || trace.IsAccessDenied(err) {
-			log.Debugf("OIDC provider doesn't offer valid UserInfo endpoint. Returning token claims: %v.", idTokenClaims)
 			return idTokenClaims, nil
 		}
 		return nil, trace.Wrap(err, "unable to fetch UserInfo claims")
 	}
-	log.Debugf("UserInfo claims: %v.", userInfoClaims)
 
 	// Verify subject matches
 	if idTokenClaims.Subject != userInfoClaims.Subject {
 		return nil, trace.BadParameter("OIDC claim subjects in UserInfo does not match")
 	}
 
-	// Merge claims
-	mergedClaims := mergeOIDCClaims(idTokenClaims, userInfoClaims)
-	return mergedClaims, nil
+	// Merge claims - convert both to maps and combine
+	idMap := claimsToMap(idTokenClaims)
+	uiMap := make(map[string]interface{})
+	if uiData, err := json.Marshal(userInfoClaims); err == nil {
+		json.Unmarshal(uiData, &uiMap)
+	}
+
+	for k, v := range uiMap {
+		if _, exists := idMap[k]; !exists {
+			idMap[k] = v
+		}
+	}
+
+	// Convert back to oidc.Claims by creating a new IDTokenClaims with merged data
+	mergedData, _ := json.Marshal(idMap)
+	var mergedClaims oidc.IDTokenClaims
+	json.Unmarshal(mergedData, &mergedClaims)
+	return &mergedClaims, nil
 }
 
-func getUserInfoClaims(ctx context.Context, rpClient rp.RelyingParty, accessToken string) (oidc.UserInfo, error) {
-	issuerURL := rpClient.OIDCConfig().Issuer
+func getUserInfoClaims(ctx context.Context, connector types.OIDCConnector, accessToken string) (oidc.UserInfo, error) {
+	issuerURL := connector.GetIssuerURL()
 
 	err := isHTTPS(issuerURL)
 	if err != nil {
-		return oidc.UserInfo{}, trace.NotFound(err.Error())
+		return oidc.UserInfo{}, trace.NotFound("issuer URL is not HTTPS: %v", err)
 	}
 
 	// Get UserInfo endpoint from provider config
@@ -954,18 +968,18 @@ func getUserInfoClaims(ctx context.Context, rpClient rp.RelyingParty, accessToke
 		return oidc.UserInfo{}, trace.Wrap(err)
 	}
 
-	if dc.UserinfoEndpoint == nil {
+	if dc.UserinfoEndpoint == "" {
 		return oidc.UserInfo{}, trace.NotFound("UserInfo endpoint not found")
 	}
 
-	endpoint := dc.UserinfoEndpoint.String()
+	endpoint := dc.UserinfoEndpoint
 
 	err = isHTTPS(endpoint)
 	if err != nil {
-		return oidc.UserInfo{}, trace.NotFound(err.Error())
+		return oidc.UserInfo{}, trace.NotFound("UserInfo endpoint is not HTTPS: %v", err)
 	}
 
-	log.Debugf("Fetching OIDC claims from UserInfo endpoint: %q.", endpoint)
+	// Fetching OIDC claims from UserInfo endpoint
 
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
@@ -1001,27 +1015,13 @@ func getUserInfoClaims(ctx context.Context, rpClient rp.RelyingParty, accessToke
 	return userInfo, nil
 }
 
-func mergeOIDCClaims(idToken *oidc.IDTokenClaims, userInfo oidc.UserInfo) oidc.Claims {
-	// Convert both to maps and merge
-	idMap := claimsToMap(idToken)
-	uiMap := claimsToMap(userInfo)
-
-	for k, v := range uiMap {
-		if _, exists := idMap[k]; !exists {
-			idMap[k] = v
-		}
-	}
-
-	return idMap
-}
+// mergeOIDCClaims is handled inline in getClaims function
 
 func validateACRValues(acrValue string, identityProvider string, claims oidc.Claims) error {
 	claimsMap := claimsToMap(claims)
 
 	switch identityProvider {
 	case teleport.NetIQ:
-		log.Debugf("Validating OIDC ACR values with '%v' rules.", identityProvider)
-
 		tokenAcr, ok := claimsMap["acr"]
 		if !ok {
 			return trace.BadParameter("acr not found in claims")
@@ -1051,18 +1051,14 @@ func validateACRValues(acrValue string, identityProvider string, claims oidc.Cla
 			}
 		}
 		if !acrValueMatched {
-			log.Debugf("No OIDC ACR match found for '%v' in '%v'.", acrValue, tokenAcrValues)
 			return trace.BadParameter("acr claim does not match")
 		}
 	default:
-		log.Debugf("Validating OIDC ACR values with default rules.")
-
 		claimValue, ok := claimsMap["acr"].(string)
 		if !ok {
 			return trace.BadParameter("acr claim does not exist")
 		}
 		if claimValue != acrValue {
-			log.Debugf("No OIDC ACR match found '%v' != '%v'.", acrValue, claimValue)
 			return trace.BadParameter("acr claim does not match")
 		}
 	}
