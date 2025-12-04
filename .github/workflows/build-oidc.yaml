@@ -1,7 +1,7 @@
 name: Build OIDC Module
 run-name: Build OIDC Module - ${{ github.run_id }}
-# Workflow to build and test OIDC authentication module ported to v18.0.0
-# Triggering workflow after enabling GitHub Actions
+# Workflow to build and test OIDC authentication module ported to v18.4.2
+# Triggering workflow for v18.4.2-oidc branch
 
 on:
   push:
