@@ -816,7 +816,7 @@ func NewServer(cfg *InitConfig, opts ...ServerOption) (as *Server, err error) {
 	}
 
 	oas, err := NewOIDCAuthService(&OIDCAuthServiceConfig{
-		Auth:    &as,
+		Auth:    as,
 		Emitter: as.emitter,
 	})
 	if err != nil {
