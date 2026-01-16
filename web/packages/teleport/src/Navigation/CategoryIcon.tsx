@@ -40,6 +40,9 @@ export function CategoryIcon({
     case NavigationCategory.Resources:
       Icon = Icons.Server;
       break;
+    case NavigationCategory.Portal:
+      Icon = Icons.Server;
+      break;
     case NavigationCategory.ZeroTrustAccess:
       Icon = Icons.KeyHole;
       break;
