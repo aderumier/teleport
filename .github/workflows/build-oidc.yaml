@@ -8,10 +8,12 @@ on:
     branches:
       - v18.0.0-oidc
       - v18.4.2-oidc
+      - portal
   pull_request:
     branches:
       - v18.0.0-oidc
       - v18.4.2-oidc
+      - portal
   workflow_dispatch:
 
 jobs:
