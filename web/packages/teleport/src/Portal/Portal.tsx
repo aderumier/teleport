@@ -153,8 +153,8 @@ export function ClusterResources({
   const canCreate = teleCtx.storeUser.getTokenAccess().create;
   const [loadClusterError, setLoadClusterError] = useState('');
 
-  // Portal-specific: Filter by applications:docs tag
-  const portalQuery = 'labels["applications"] == "docs"';
+  // Portal-specific: Filter by application:docs tag (singular "application")
+  const portalQuery = 'labels["application"] == "docs"';
 
   const { params, setParams } = useUrlFiltering(
     {
@@ -165,7 +165,7 @@ export function ClusterResources({
       pinnedOnly:
         preferences?.unifiedResourcePreferences?.defaultTab ===
         DefaultTab.PINNED,
-      query: portalQuery, // Always filter by applications:docs tag
+      query: portalQuery, // Always filter by application:docs tag
     },
     availabilityFilter?.mode
   );
@@ -191,18 +191,13 @@ export function ClusterResources({
   } = useUnifiedResourcesFetch({
       fetchFunc: useCallback(
       async (paginationParams, signal) => {
-        // Portal-specific: Always filter by applications:docs tag
-        // Combine the portal query with any existing query from params
-        const portalQuery = 'labels["applications"] == "docs"';
-        const combinedQuery = params.query
-          ? `${params.query} && ${portalQuery}`
-          : portalQuery;
-
+        // Portal-specific: Always filter by application:docs tag (singular "application")
+        // The query is already set in useUrlFiltering, so we use params.query directly
         const response = await teleCtx.resourceService.fetchUnifiedResources(
           clusterId,
           {
             search: params.search,
-            query: buildPredicateExpression(params.statuses, combinedQuery),
+            query: buildPredicateExpression(params.statuses, params.query),
             pinnedOnly: params.pinnedOnly,
             sort: params.sort,
             kinds: params.kinds,
