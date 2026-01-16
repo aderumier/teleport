@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { useCallback, useMemo, useState, type JSX } from 'react';
+import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
 import styled from 'styled-components';
 
 import { Box, Flex } from 'design';
@@ -156,7 +156,7 @@ export function ClusterResources({
   // Portal-specific: Filter by application:docs tag (singular "application")
   const portalQuery = 'labels["application"] == "docs"';
 
-  const { params, setParams } = useUrlFiltering(
+  const { params: urlParams, setParams } = useUrlFiltering(
     {
       sort: {
         fieldName: 'name',
@@ -165,10 +165,41 @@ export function ClusterResources({
       pinnedOnly:
         preferences?.unifiedResourcePreferences?.defaultTab ===
         DefaultTab.PINNED,
-      query: portalQuery, // Always filter by application:docs tag
     },
     availabilityFilter?.mode
   );
+
+  // Always merge portal query with any existing query from URL
+  const params = useMemo(() => {
+    const existingQuery = urlParams.query;
+    // If there's an existing query, combine it with portal query using &&
+    // Otherwise, just use the portal query
+    const combinedQuery = existingQuery
+      ? `${existingQuery} && ${portalQuery}`
+      : portalQuery;
+
+    return {
+      ...urlParams,
+      query: combinedQuery,
+    };
+  }, [urlParams, portalQuery]);
+
+  // Ensure the portal query is always in the URL when the page loads without query params
+  useEffect(() => {
+    // Only update URL if there's no query parameter and we're not already filtering
+    // This ensures the filter is always applied and visible in the URL
+    if (!urlParams.query && !urlParams.search) {
+      setParams({
+        ...urlParams,
+        query: portalQuery,
+        sort: urlParams.sort || {
+          fieldName: 'name',
+          dir: 'ASC',
+        },
+        pinnedOnly: urlParams.pinnedOnly !== undefined ? urlParams.pinnedOnly : false,
+      });
+    }
+  }, [urlParams.query, urlParams.search]); // Update when query/search changes
 
   const getCurrentClusterPinnedResources = useCallback(
     () => getClusterPinnedResources(clusterId),
