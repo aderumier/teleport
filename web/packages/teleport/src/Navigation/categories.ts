@@ -18,6 +18,7 @@
 
 export enum NavigationCategory {
   Resources = 'Resources',
+  Portal = 'Portal',
   ZeroTrustAccess = 'Zero Trust Access',
   MachineWorkloadId = 'Machine & Workload ID',
   IdentityGovernance = 'Identity Governance',

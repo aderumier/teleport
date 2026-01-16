@@ -49,6 +49,7 @@ import {
   SidenavCategory,
 } from './categories';
 import { getResourcesSection, ResourcesSection } from './ResourcesSection';
+import { getPortalSection, PortalSection } from './PortalSection';
 import { SearchSection } from './Search';
 import { DefaultSection, rightPanelWidth, StandaloneSection } from './Section';
 import { zIndexMap } from './zIndexMap';
@@ -380,6 +381,16 @@ export function Navigation({
     });
   }, [clusterId, preferences, updatePreferences]);
 
+  const portalSection = useMemo(() => {
+    const searchParams = new URLSearchParams(location.search);
+    return getPortalSection({
+      clusterId,
+      preferences,
+      updatePreferences,
+      searchParams,
+    });
+  }, [clusterId, preferences, updatePreferences]);
+
   const handleSetExpandedSection = useCallback(
     (section: NavigationSection) => {
       setIsClosing(false);
@@ -395,8 +406,8 @@ export function Navigation({
   );
 
   const combinedSideNavSections = useMemo(
-    () => [resourcesSection, ...navSections],
-    [resourcesSection, navSections]
+    () => [resourcesSection, portalSection, ...navSections],
+    [resourcesSection, portalSection, navSections]
   );
   const currentPageSection = useMemo(() => {
     return combinedSideNavSections.find(
@@ -498,6 +509,16 @@ export function Navigation({
               canToggleStickyMode={!!currentPageSection}
             />
             <ResourcesSection
+              expandedSection={debouncedSection}
+              previousExpandedSection={previousExpandedSection}
+              handleSetExpandedSection={handleSetExpandedSection}
+              currentView={currentView}
+              stickyMode={stickyMode}
+              toggleStickyMode={toggleStickyMode}
+              canToggleStickyMode={!!currentPageSection}
+              showPoweredByLogo={showPoweredByLogo}
+            />
+            <PortalSection
               expandedSection={debouncedSection}
               previousExpandedSection={previousExpandedSection}
               handleSetExpandedSection={handleSetExpandedSection}

@@ -178,6 +178,7 @@ const cfg = {
     trustedClusters: '/web/trust',
     audit: '/web/cluster/:clusterId/audit',
     unifiedResources: '/web/cluster/:clusterId/resources',
+    portal: '/web/cluster/:clusterId/portal',
     nodes: '/web/cluster/:clusterId/nodes',
     sessions: '/web/cluster/:clusterId/sessions',
     recordings: '/web/cluster/:clusterId/recordings',
@@ -771,6 +772,10 @@ const cfg = {
 
   getUnifiedResourcesRoute(clusterId: string) {
     return generatePath(cfg.routes.unifiedResources, { clusterId });
+  },
+
+  getPortalRoute(clusterId: string) {
+    return generatePath(cfg.routes.portal, { clusterId });
   },
 
   getDatabasesRoute(clusterId: string) {

@@ -69,6 +69,7 @@ import { Support } from './Support';
 import { TrustedClusters } from './TrustedClusters';
 import { NavTitle, type FeatureFlags, type TeleportFeature } from './types';
 import { UnifiedResources } from './UnifiedResources';
+import { Portal } from './Portal/Portal';
 import { Users } from './Users';
 import { WorkloadIdentities } from './WorkloadIdentity/WorkloadIdentities';
 
@@ -150,6 +151,50 @@ export class FeatureUnifiedResources implements TeleportFeature {
       return cfg.getUnifiedResourcesRoute(clusterId);
     },
     searchableTags: [
+      'resources',
+      'nodes',
+      'servers',
+      'applications',
+      'apps',
+      'desktops',
+      'databases',
+      'dbs',
+      'kubes',
+      'kubernetes',
+    ],
+  };
+
+  hasAccess() {
+    return !cfg.isDashboard;
+  }
+
+  getRoute() {
+    return this.route;
+  }
+}
+
+export class FeaturePortal implements TeleportFeature {
+  category = NavigationCategory.Portal;
+  sideNavCategory = SideNavigationCategory.Portal;
+  // TODO(rudream): Remove this once shortcuts to pinned/nodes/apps/dbs/desktops/kubes are implemented.
+  standalone = true;
+
+  route = {
+    title: 'Portal',
+    path: cfg.routes.portal,
+    exact: true,
+    component: Portal,
+  };
+
+  navigationItem = {
+    title: NavTitle.Portal,
+    icon: Server,
+    exact: true,
+    getLink(clusterId: string) {
+      return cfg.getPortalRoute(clusterId);
+    },
+    searchableTags: [
+      'portal',
       'resources',
       'nodes',
       'servers',
@@ -848,6 +893,9 @@ export function getOSSFeatures(): TeleportFeature[] {
   return [
     // Resources
     new FeatureUnifiedResources(),
+
+    // Portal
+    new FeaturePortal(),
 
     // AddNew
     new FeatureDiscover(),
