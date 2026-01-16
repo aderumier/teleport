@@ -220,6 +220,9 @@ export const RightPanel = forwardRef<
       zIndex={zIndexMap.sideNavExpandedPanel}
       slideFrom="left"
       panelOffset="var(--sidenav-width)"
+      css={`
+        pointer-events: ${isVisible ? 'auto' : 'none'};
+      `}
     >
       {children}
     </SlidingSidePanel>
