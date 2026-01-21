@@ -151,7 +151,7 @@ export function Main(props: MainProps) {
 
     const indexRoute = cfg.isDashboard
       ? cfg.routes.downloadCenter
-      : cfg.getUnifiedResourcesRoute(cfg.proxyCluster);
+      : cfg.getPortalRoute(cfg.proxyCluster);
 
     return <Redirect to={indexRoute} />;
   }

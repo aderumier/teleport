@@ -188,7 +188,8 @@ function getEntryRoute() {
   if (entryUrl) {
     entryUrl = history.ensureKnownRoute(entryUrl);
   } else {
-    entryUrl = cfg.routes.root;
+    // Default to Portal page instead of root
+    entryUrl = cfg.getPortalRoute(cfg.proxyCluster);
   }
 
   return history.ensureBaseUrl(entryUrl);
