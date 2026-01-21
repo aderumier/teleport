@@ -21,6 +21,7 @@ import styled from 'styled-components';
 
 import { Box, ButtonPrimary, Flex, H1, Link, Text } from 'design';
 import { FieldCheckbox } from 'shared/components/FieldCheckbox';
+import cylleneBg from 'design/assets/images/cyllene-bg.jpg';
 
 import FormLogin from 'teleport/components/FormLogin';
 import { LogoHero } from 'teleport/components/LogoHero';
@@ -67,13 +68,13 @@ export function LoginComponent({
   }
 
   return (
-    <>
+    <LoginPageContainer>
       <LogoHero />
       {showMotd ? (
         <Motd message={motd} onClick={acknowledgeMotd} />
       ) : (
         <FormLogin
-          title={'Sign in to Teleport'}
+          title={'Bienvenue sur le portail Cyllène'}
           authProviders={authProviders}
           auth2faType={auth2faType}
           preferredMfaType={preferredMfaType}
@@ -87,7 +88,7 @@ export function LoginComponent({
           primaryAuthType={primaryAuthType}
         />
       )}
-    </>
+    </LoginPageContainer>
   );
 }
 
@@ -108,7 +109,7 @@ function LicenseAcknowledgement({
   const [checked, setChecked] = useState(false);
 
   return (
-    <>
+    <LoginPageContainer>
       <LogoHero />
       <LicenseBox>
         <H1 mb={2}>Welcome to Teleport</H1>
@@ -174,7 +175,7 @@ function LicenseAcknowledgement({
           Privacy Policy
         </FooterLink>
       </Footer>
-    </>
+    </LoginPageContainer>
   );
 }
 
@@ -197,4 +198,18 @@ const InfoText = styled(Text)`
 
   font-size: ${props => props.theme.fontSizes[3]}px;
   color: ${p => p.theme.colors.text.muted};
+`;
+
+const LoginPageContainer = styled(Box)`
+  min-height: 100vh;
+  width: 100%;
+  background-image: url(${cylleneBg});
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 48px;
 `;

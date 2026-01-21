@@ -24,6 +24,7 @@ import CommunityLogoDark from 'design/assets/images/community-dark.svg';
 import CommunityLogoLight from 'design/assets/images/community-light.svg';
 import EnterpriseLogoDark from 'design/assets/images/enterprise-dark.svg';
 import EnterpriseLogoLight from 'design/assets/images/enterprise-light.svg';
+import CylleneLogo from 'design/assets/images/logo-colored.svg';
 import Image from 'design/Image';
 
 import cfg, { TeleportEdition } from 'teleport/config';
@@ -35,16 +36,16 @@ type LogoMap = {
 
 export const logos: Record<TeleportEdition, LogoMap> = {
   oss: {
-    light: AGPLLogoLight,
-    dark: AGPLLogoDark,
+    light: CylleneLogo,
+    dark: CylleneLogo,
   },
   community: {
-    light: CommunityLogoLight,
-    dark: CommunityLogoDark,
+    light: CylleneLogo,
+    dark: CylleneLogo,
   },
   ent: {
-    light: EnterpriseLogoLight,
-    dark: EnterpriseLogoDark,
+    light: CylleneLogo,
+    dark: CylleneLogo,
   },
 };
 

@@ -50,9 +50,11 @@ import {
 } from './categories';
 import { getResourcesSection, ResourcesSection } from './ResourcesSection';
 import { getPortalSection, PortalSection } from './PortalSection';
-import { SearchSection } from './Search';
 import { DefaultSection, rightPanelWidth, StandaloneSection } from './Section';
 import { zIndexMap } from './zIndexMap';
+import * as Icons from 'design/Icon';
+import { getFilterKindName } from 'shared/components/UnifiedResources';
+import { encodeUrlQueryParams } from 'teleport/components/hooks/useUrlFiltering';
 
 const SideNavContainer = styled(Flex).attrs({
   gap: 2,
@@ -391,6 +393,58 @@ export function Navigation({
     });
   }, [clusterId, preferences, updatePreferences]);
 
+  // Create standalone sections for filtered views
+  const filteredViewsSections = useMemo(() => {
+    const baseRoute = cfg.getUnifiedResourcesRoute(clusterId);
+    const filteredViews = [
+      {
+        kind: 'app' as const,
+        icon: Icons.Application,
+        title: getFilterKindName('app'),
+      },
+      {
+        kind: 'db' as const,
+        icon: Icons.Database,
+        title: getFilterKindName('db'),
+      },
+      {
+        kind: 'windows_desktop' as const,
+        icon: Icons.Desktop,
+        title: getFilterKindName('windows_desktop'),
+      },
+      {
+        kind: 'git_server' as const,
+        icon: Icons.GitHub,
+        title: getFilterKindName('git_server'),
+      },
+      {
+        kind: 'kube_cluster' as const,
+        icon: Icons.Kubernetes,
+        title: getFilterKindName('kube_cluster'),
+      },
+      {
+        kind: 'node' as const,
+        icon: Icons.Server,
+        title: getFilterKindName('node'),
+      },
+    ];
+
+    return filteredViews.map(({ kind, icon, title }) => {
+      const route = encodeUrlQueryParams({
+        pathname: baseRoute,
+        kinds: [kind],
+        pinnedOnly: false,
+      });
+      return {
+        standalone: {
+          title,
+          route,
+          Icon: icon,
+        },
+      } as NavigationSection;
+    });
+  }, [clusterId]);
+
   const handleSetExpandedSection = useCallback(
     (section: NavigationSection) => {
       setIsClosing(false);
@@ -498,16 +552,6 @@ export function Navigation({
         <PanelBackground />
         {!cfg.isDashboard && (
           <>
-            <SearchSection
-              navigationSections={[...combinedSideNavSections, topMenuSection]}
-              expandedSection={debouncedSection}
-              previousExpandedSection={previousExpandedSection}
-              handleSetExpandedSection={handleSetExpandedSection}
-              currentView={currentView}
-              stickyMode={stickyMode}
-              toggleStickyMode={toggleStickyMode}
-              canToggleStickyMode={!!currentPageSection}
-            />
             <ResourcesSection
               expandedSection={debouncedSection}
               previousExpandedSection={previousExpandedSection}
@@ -528,6 +572,16 @@ export function Navigation({
               canToggleStickyMode={!!currentPageSection}
               showPoweredByLogo={showPoweredByLogo}
             />
+            {/* Filtered Views as standalone sections */}
+            {filteredViewsSections.map(section => (
+              <StandaloneSection
+                key={section.standalone.route}
+                title={section.standalone.title}
+                route={section.standalone.route}
+                Icon={section.standalone.Icon}
+                $active={section.standalone.route === currentView?.route}
+              />
+            ))}
           </>
         )}
         {navSections.map(section => {

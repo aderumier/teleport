@@ -66,8 +66,8 @@ export default function LoginForm(props: Props) {
     isPasswordlessEnabled,
     authProviders = [],
     primaryAuthType,
-    title = 'Sign in to Teleport',
-    ssoTitle = 'Sign in to Teleport with SSO',
+    title = 'Bienvenue sur le portail Cyllène',
+    ssoTitle = 'Bienvenue sur le portail Cyllène avec SSO',
   } = props;
 
   const [showIdentifierFirstLogin, setShowIdentifierFirstLogin] = useState(

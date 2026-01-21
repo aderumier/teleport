@@ -45,9 +45,6 @@ export enum CustomNavigationSubcategory {
 export type SidenavCategory = NavigationCategory | CustomNavigationCategory;
 
 export const NAVIGATION_CATEGORIES = [
-  NavigationCategory.ZeroTrustAccess,
-  NavigationCategory.MachineWorkloadId,
-  NavigationCategory.IdentityGovernance,
   NavigationCategory.IdentitySecurity,
   NavigationCategory.Audit,
   NavigationCategory.AddNew,

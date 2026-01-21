@@ -539,8 +539,7 @@ export function SectionFooter({
   return (
     <>
       {showPoweredByLogo && <PoweredByTeleportLogo />}
-      {edition === 'oss' && !showPoweredByLogo && <AGPLFooter />}
-      {edition === 'community' && !showPoweredByLogo && <CommunityFooter />}
+      {/* AGPL Edition and Community Edition footers removed */}
     </>
   );
 }

@@ -377,32 +377,7 @@ export function ResourcesSection({
                   <Text typography="body2">{section.title}</Text>
                 </SubsectionItem>
               ))}
-
-            <Divider />
-            <Flex py={verticalPadding} px={3}>
-              <Text typography="h3" color="text.slightlyMuted">
-                Filtered Views
-              </Text>
-            </Flex>
-
-            {subsections
-              .filter(
-                section =>
-                  section.subCategory ===
-                  CustomNavigationSubcategory.FilteredViews
-              )
-              .map(section => (
-                <SubsectionItem
-                  $active={section.customRouteMatchFn(currentViewRoute)}
-                  to={section.route}
-                  key={section.title}
-                  onClick={section.onClick}
-                  exact={section.exact}
-                >
-                  <section.icon size={16} />
-                  <Text typography="body2">{section.title}</Text>
-                </SubsectionItem>
-              ))}
+            {/* Filtered Views removed - now displayed as standalone sections in the left menu */}
           </Box>
           <SectionFooter
             showPoweredByLogo={showPoweredByLogo}
