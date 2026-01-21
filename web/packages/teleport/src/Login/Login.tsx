@@ -26,6 +26,7 @@ import cylleneBg from 'design/assets/images/cyllene-bg.jpg';
 import FormLogin from 'teleport/components/FormLogin';
 import { LogoHero } from 'teleport/components/LogoHero';
 import cfg from 'teleport/config';
+import cylleneBlueLogo from 'design/assets/images/cyllene-blue.svg';
 
 import Motd from './Motd';
 import useLogin, { State } from './useLogin';
@@ -69,7 +70,7 @@ export function LoginComponent({
 
   return (
     <LoginPageContainer>
-      <LogoHero />
+      <LogoHero customSrc={cylleneBlueLogo} />
       {showMotd ? (
         <Motd message={motd} onClick={acknowledgeMotd} />
       ) : (
@@ -110,7 +111,7 @@ function LicenseAcknowledgement({
 
   return (
     <LoginPageContainer>
-      <LogoHero />
+      <LogoHero customSrc={cylleneBlueLogo} />
       <LicenseBox>
         <H1 mb={2}>Welcome to Teleport</H1>
         <InfoText>

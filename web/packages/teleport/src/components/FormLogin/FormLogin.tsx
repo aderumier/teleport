@@ -111,10 +111,10 @@ export default function LoginForm(props: Props) {
 
   // Everything below requires local auth to be enabled.
   return (
-    <Card my="5" mx="auto" maxWidth={500} minWidth={300} py={4}>
-      <Text typography="h1" mb={4} textAlign="center">
+    <StyledCard my="5" mx="auto" maxWidth={500} minWidth={300} py={4}>
+      <StyledTitle typography="h1" mb={4} textAlign="center">
         {title}
-      </Text>
+      </StyledTitle>
       {errorMessage && <Alerts.Danger m={4}>{errorMessage}</Alerts.Danger>}
       {showAccessChangedMessage && (
         <Alerts.Warning m={4}>
@@ -136,9 +136,17 @@ export default function LoginForm(props: Props) {
           administrator for more information.
         </P>
       )}
-    </Card>
+    </StyledCard>
   );
 }
+
+const StyledCard = styled(Card)`
+  background-color: white;
+`;
+
+const StyledTitle = styled(Text)`
+  color: black;
+`;
 
 const SsoList = ({
   attempt,

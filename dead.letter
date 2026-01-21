@@ -1,0 +1,4 @@
+
+
+teleport.odiso.net : Apr 10 09:37:42 : teleport : user NOT in sudoers ; TTY=pts/0 ; PWD=/home/teleport ; USER=root ; COMMAND=/usr/bin/make -C build.asserts build-binaries
+

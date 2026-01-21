@@ -63,6 +63,8 @@ import useStickyClusterId from 'teleport/useStickyClusterId';
 
 import { ResourceActionButton } from '../UnifiedResources/ResourceActionButton';
 import { StatusInfo } from '../UnifiedResources/StatusInfo';
+import { mapResourceToViewItem } from 'shared/components/UnifiedResources/shared/viewItemsFactory';
+import { launchResource } from './launchResource';
 
 export function Portal() {
   const { clusterId, isLeafCluster } = useStickyClusterId();
@@ -196,7 +198,7 @@ export function ClusterResources({
           fieldName: 'name',
           dir: 'ASC',
         },
-        pinnedOnly: urlParams.pinnedOnly !== undefined ? urlParams.pinnedOnly : false,
+        pinnedOnly: false, // Portal always shows all resources (no tabs)
       });
     }
   }, [urlParams.query, urlParams.search]); // Update when query/search changes
@@ -209,7 +211,7 @@ export function ClusterResources({
     updateClusterPinnedResources(clusterId, pinnedResources);
 
   const pinning: UnifiedResourcesPinning = {
-    kind: 'supported',
+    kind: 'hidden', // Hide tabs for Portal
     updateClusterPinnedResources: updateCurrentClusterPinnedResources,
     getClusterPinnedResources: getCurrentClusterPinnedResources,
   };
@@ -325,7 +327,7 @@ export function ClusterResources({
         updateUnifiedResourcesPreferences={preferences => {
           updatePreferences({ unifiedResourcePreferences: preferences });
         }}
-        availableKinds={getAvailableKindsWithAccess(flags)}
+        availableKinds={[]} // Hide Types and Health Status buttons for Portal
         pinning={pinning}
         ClusterDropdown={
           <ClusterDropdown
@@ -341,15 +343,24 @@ export function ClusterResources({
             emptyStateInfo={emptyStateInfo}
           />
         }
-        resources={resources.map(resource => ({
-          resource,
-          ui: {
-            ActionButton: getActionButton?.(
-              resource,
-              params.includedResourceMode
-            ) || <ResourceActionButton resource={resource} />,
-          },
-        }))}
+        resources={resources.map(resource => {
+          // Portal-specific: Remove labels and hide URL (addrWithProtocol)
+          const modifiedResource = {
+            ...resource,
+            labels: [], // Remove labels for Portal
+            // Remove addrWithProtocol to hide URL in card view
+            ...(resource.kind === 'app' && {
+              addrWithProtocol: undefined,
+            }),
+          };
+          
+          return {
+            resource: modifiedResource,
+            ui: {
+              ActionButton: null, // No action button for Portal - card is clickable instead
+            },
+          };
+        })}
         setParams={setParams}
         Header={
           <FeatureHeader

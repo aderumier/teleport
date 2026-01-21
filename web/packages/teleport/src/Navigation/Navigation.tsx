@@ -48,8 +48,6 @@ import {
   NAVIGATION_CATEGORIES,
   SidenavCategory,
 } from './categories';
-import { getResourcesSection, ResourcesSection } from './ResourcesSection';
-import { getPortalSection, PortalSection } from './PortalSection';
 import { DefaultSection, rightPanelWidth, StandaloneSection } from './Section';
 import { zIndexMap } from './zIndexMap';
 import * as Icons from 'design/Icon';
@@ -57,7 +55,7 @@ import { getFilterKindName } from 'shared/components/UnifiedResources';
 import { encodeUrlQueryParams } from 'teleport/components/hooks/useUrlFiltering';
 
 const SideNavContainer = styled(Flex).attrs({
-  gap: 2,
+  gap: 1,
   pt: 2,
   flexDirection: 'column',
   alignItems: 'center',
@@ -373,25 +371,25 @@ export function Navigation({
 
   const topMenuSection = useMemo(() => getTopMenuSection(features), [features]);
 
-  const resourcesSection = useMemo(() => {
-    const searchParams = new URLSearchParams(location.search);
-    return getResourcesSection({
-      clusterId,
-      preferences,
-      updatePreferences,
-      searchParams,
+  // Create Portal standalone section with direct link to filtered portal
+  const portalStandaloneSection = useMemo(() => {
+    const baseRoute = cfg.getPortalRoute(clusterId);
+    const route = encodeUrlQueryParams({
+      pathname: baseRoute,
+      searchString: 'labels["application"] == "docs"',
+      isAdvancedSearch: true,
+      sort: { fieldName: 'name', dir: 'ASC' },
+      pinnedOnly: false,
+      kinds: ['app'],
     });
-  }, [clusterId, preferences, updatePreferences]);
-
-  const portalSection = useMemo(() => {
-    const searchParams = new URLSearchParams(location.search);
-    return getPortalSection({
-      clusterId,
-      preferences,
-      updatePreferences,
-      searchParams,
-    });
-  }, [clusterId, preferences, updatePreferences]);
+    return {
+      standalone: {
+        title: 'Portal',
+        route,
+        Icon: Icons.Server,
+      },
+    } as NavigationSection;
+  }, [clusterId]);
 
   // Create standalone sections for filtered views
   const filteredViewsSections = useMemo(() => {
@@ -403,14 +401,19 @@ export function Navigation({
         title: getFilterKindName('app'),
       },
       {
-        kind: 'db' as const,
-        icon: Icons.Database,
-        title: getFilterKindName('db'),
+        kind: 'node' as const,
+        icon: Icons.Server,
+        title: getFilterKindName('node'),
       },
       {
         kind: 'windows_desktop' as const,
         icon: Icons.Desktop,
         title: getFilterKindName('windows_desktop'),
+      },
+      {
+        kind: 'db' as const,
+        icon: Icons.Database,
+        title: getFilterKindName('db'),
       },
       {
         kind: 'git_server' as const,
@@ -421,11 +424,6 @@ export function Navigation({
         kind: 'kube_cluster' as const,
         icon: Icons.Kubernetes,
         title: getFilterKindName('kube_cluster'),
-      },
-      {
-        kind: 'node' as const,
-        icon: Icons.Server,
-        title: getFilterKindName('node'),
       },
     ];
 
@@ -460,8 +458,8 @@ export function Navigation({
   );
 
   const combinedSideNavSections = useMemo(
-    () => [resourcesSection, portalSection, ...navSections],
-    [resourcesSection, portalSection, navSections]
+    () => [...navSections],
+    [navSections]
   );
   const currentPageSection = useMemo(() => {
     return combinedSideNavSections.find(
@@ -552,25 +550,12 @@ export function Navigation({
         <PanelBackground />
         {!cfg.isDashboard && (
           <>
-            <ResourcesSection
-              expandedSection={debouncedSection}
-              previousExpandedSection={previousExpandedSection}
-              handleSetExpandedSection={handleSetExpandedSection}
-              currentView={currentView}
-              stickyMode={stickyMode}
-              toggleStickyMode={toggleStickyMode}
-              canToggleStickyMode={!!currentPageSection}
-              showPoweredByLogo={showPoweredByLogo}
-            />
-            <PortalSection
-              expandedSection={debouncedSection}
-              previousExpandedSection={previousExpandedSection}
-              handleSetExpandedSection={handleSetExpandedSection}
-              currentView={currentView}
-              stickyMode={stickyMode}
-              toggleStickyMode={toggleStickyMode}
-              canToggleStickyMode={!!currentPageSection}
-              showPoweredByLogo={showPoweredByLogo}
+            {/* Portal as standalone section */}
+            <StandaloneSection
+              title={portalStandaloneSection.standalone.title}
+              route={portalStandaloneSection.standalone.route}
+              Icon={portalStandaloneSection.standalone.Icon}
+              $active={portalStandaloneSection.standalone.route === currentView?.route}
             />
             {/* Filtered Views as standalone sections */}
             {filteredViewsSections.map(section => (

@@ -1,0 +1,9 @@
+diff a/lib/modules/modules.go b/lib/modules/modules.go	(rejected hunks)
+@@ -361,6 +361,7 @@ func (p *defaultModules) Features() Features {
+ 		DB:                true,
+ 		App:               true,
+ 		Desktop:           true,
++		OIDC:              true,
+ 		AutomaticUpgrades: p.automaticUpgrades,
+ 		Assist:            true,
+ 	}
