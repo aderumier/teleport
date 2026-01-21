@@ -212,6 +212,16 @@ export interface UnifiedResourcesProps {
    * with selected resources status info.
    */
   onShowStatusInfo(resource: UnifiedResourceDefinition): void;
+  /**
+   * Optional custom ViewComponent to override the default CardsView/ListView.
+   * If provided, this will be used instead of the view mode preference.
+   */
+  ViewComponent?: React.ComponentType<ResourceViewProps>;
+  /**
+   * If true, hides the "Types" and "Health Status" filter menus.
+   * Useful for custom views like Portal that don't need these filters.
+   */
+  hideFilterMenus?: boolean;
 }
 
 export function UnifiedResources(props: UnifiedResourcesProps) {
@@ -230,6 +240,8 @@ export function UnifiedResources(props: UnifiedResourcesProps) {
     ClusterDropdown,
     bulkActions = [],
     onShowStatusInfo,
+    ViewComponent: customViewComponent,
+    hideFilterMenus = false,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -468,9 +480,10 @@ export function UnifiedResources(props: UnifiedResourcesProps) {
   }, []);
 
   const ViewComponent =
-    unifiedResourcePreferences.viewMode === ViewMode.CARD || forceCardView
+    customViewComponent ||
+    (unifiedResourcePreferences.viewMode === ViewMode.CARD || forceCardView
       ? CardsView
-      : ListView;
+      : ListView);
 
   return (
     <div
@@ -550,6 +563,7 @@ export function UnifiedResources(props: UnifiedResourcesProps) {
         }}
         hideViewModeOptions={forceCardView}
         onRefresh={() => fetchResources({ clear: true })}
+        hideFilterMenus={hideFilterMenus}
         BulkActions={
           <>
             {selectedResources.length > 0 && (

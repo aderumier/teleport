@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type JSX } from 'react';
 import styled from 'styled-components';
 
 import { Box, Flex } from 'design';
@@ -32,6 +32,7 @@ import {
   UnifiedResourceDefinition,
   UnifiedResourcesPinning,
   useUnifiedResourcesFetch,
+  generateUnifiedResourceKey,
 } from 'shared/components/UnifiedResources';
 import { buildPredicateExpression } from 'shared/components/UnifiedResources/shared/predicateExpression';
 import {
@@ -65,6 +66,10 @@ import { ResourceActionButton } from '../UnifiedResources/ResourceActionButton';
 import { StatusInfo } from '../UnifiedResources/StatusInfo';
 import { mapResourceToViewItem } from 'shared/components/UnifiedResources/shared/viewItemsFactory';
 import { launchResource } from './launchResource';
+import { PortalCardsView } from './PortalCardsView';
+
+// Context to pass resource map to PortalCardsView
+const ResourceMapContext = createContext<Map<string, UnifiedResource>>(new Map());
 
 export function Portal() {
   const { clusterId, isLeafCluster } = useStickyClusterId();
@@ -313,10 +318,21 @@ export function ClusterResources({
     });
   }
 
+  // Create a map of resource keys to original resources for PortalCardsView
+  const resourceMap = useMemo(() => {
+    const map = new Map<string, UnifiedResource>();
+    resources.forEach(resource => {
+      const key = generateUnifiedResourceKey(resource);
+      map.set(key, resource);
+    });
+    return map;
+  }, [resources]);
+
   return (
     <>
       {loadClusterError && <Danger>{loadClusterError}</Danger>}
-      <SharedUnifiedResources
+      <ResourceMapContext.Provider value={resourceMap}>
+        <SharedUnifiedResources
         onShowStatusInfo={onShowStatusInfo}
         bulkActions={bulkActions}
         params={params}
@@ -328,6 +344,7 @@ export function ClusterResources({
           updatePreferences({ unifiedResourcePreferences: preferences });
         }}
         availableKinds={[]} // Hide Types and Health Status buttons for Portal
+        hideFilterMenus={true} // Hide Types and Health Status filter menus for Portal
         pinning={pinning}
         ClusterDropdown={
           <ClusterDropdown
@@ -381,10 +398,15 @@ export function ClusterResources({
             </Flex>
           </FeatureHeader>
         }
+        ViewComponent={PortalCardsView}
       />
+      </ResourceMapContext.Provider>
     </>
   );
 }
+
+// Export the context for use in PortalCardsView
+export { ResourceMapContext };
 
 export const emptyStateInfo: EmptyStateInfo = {
   title: 'Add your first resource to Teleport',

@@ -73,6 +73,11 @@ interface FilterPanelProps {
   availabilityFilter?: ResourceAvailabilityFilter;
   changeAvailableResourceMode(mode: IncludedResourceMode): void;
   onRefresh(): void;
+  /**
+   * If true, hides the "Types" and "Health Status" filter menus.
+   * Useful for custom views like Portal that don't need these filters.
+   */
+  hideFilterMenus?: boolean;
 }
 
 export function FilterPanel({
@@ -91,6 +96,7 @@ export function FilterPanel({
   changeAvailableResourceMode,
   ClusterDropdown = null,
   onRefresh,
+  hideFilterMenus = false,
 }: FilterPanelProps) {
   const { sort, kinds, statuses } = params;
 
@@ -140,22 +146,24 @@ export function FilterPanel({
             data-testid="select_all"
           />
         </HoverTooltip>
-        <MultiselectMenu
-          options={availableKinds
-            .toSorted((a, b) =>
-              getFilterKindName(a.kind).localeCompare(getFilterKindName(b.kind))
-            )
-            .map(({ kind, disabled }) => ({
-              value: kind as string,
-              label: getFilterKindName(kind),
-              disabled,
-            }))}
-          selected={kinds || []}
-          onChange={onKindsChanged}
-          label="Types"
-          tooltip="Filter by resource type"
-          buffered
-        />
+        {!hideFilterMenus && (
+          <MultiselectMenu
+            options={availableKinds
+              .toSorted((a, b) =>
+                getFilterKindName(a.kind).localeCompare(getFilterKindName(b.kind))
+              )
+              .map(({ kind, disabled }) => ({
+                value: kind as string,
+                label: getFilterKindName(kind),
+                disabled,
+              }))}
+            selected={kinds || []}
+            onChange={onKindsChanged}
+            label="Types"
+            tooltip="Filter by resource type"
+            buffered
+          />
+        )}
         {ClusterDropdown}
         {availabilityFilter && (
           <IncludedResourcesSelector
@@ -163,20 +171,22 @@ export function FilterPanel({
             onChange={changeAvailableResourceMode}
           />
         )}
-        <MultiselectMenu
-          options={resourceStatusOptions.map(({ label, value }) => ({
-            value,
-            label,
-          }))}
-          selected={statuses || []}
-          onChange={onHealthStatusChange}
-          label="Health Status"
-          tooltip={
-            'Health status filter is only available for database and Kubernetes resources. Support for more resource types will be added in the future.'
-          }
-          disabled={!isResourceStatusFilterSupported}
-          buffered
-        />
+        {!hideFilterMenus && (
+          <MultiselectMenu
+            options={resourceStatusOptions.map(({ label, value }) => ({
+              value,
+              label,
+            }))}
+            selected={statuses || []}
+            onChange={onHealthStatusChange}
+            label="Health Status"
+            tooltip={
+              'Health status filter is only available for database and Kubernetes resources. Support for more resource types will be added in the future.'
+            }
+            disabled={!isResourceStatusFilterSupported}
+            buffered
+          />
+        )}
       </Flex>
       <Flex gap={2} alignItems="center">
         <Flex mr={1}>{BulkActions}</Flex>

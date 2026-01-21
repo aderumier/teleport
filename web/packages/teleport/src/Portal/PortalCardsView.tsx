@@ -6,7 +6,7 @@
  * - Hides ActionButton
  */
 
-import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
+import React, { useContext, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import styled, { css } from 'styled-components';
 
 import { Box, ButtonLink, Flex, Label, Text } from 'design';
@@ -31,6 +31,7 @@ import { launchResource } from './launchResource';
 import useStickyClusterId from 'teleport/useStickyClusterId';
 import { UnifiedResource } from 'teleport/services/agents';
 import { generateUnifiedResourceKey } from 'shared/components/UnifiedResources/shared/generateUnifiedResourceKey';
+import { ResourceMapContext } from './Portal';
 
 export function PortalCardsView({
   mappedResources,
@@ -43,14 +44,15 @@ export function PortalCardsView({
   pinningSupport,
 }: ResourceViewProps) {
   const { clusterId } = useStickyClusterId();
+  const resourceMap = useContext(ResourceMapContext);
 
   return (
     <CardsContainer className="CardsContainer" gap={2}>
       {mappedResources.map(
         ({ item, key, onShowStatusInfo, showingStatusInfo }) => {
-          // Extract resource from the original resources array
-          // We need to find the resource by key
-          // For now, we'll create a simplified card that hides labels and URL
+          // Get the original resource from the context
+          const resource = resourceMap.get(key);
+          
           return (
             <PortalResourceCard
               key={key}
@@ -76,6 +78,7 @@ export function PortalCardsView({
               showingStatusInfo={showingStatusInfo}
               resourceKey={key}
               clusterId={clusterId}
+              resource={resource}
             />
           );
         }
@@ -98,6 +101,7 @@ function PortalResourceCard({
   pinningSupport,
   resourceKey,
   clusterId,
+  resource,
 }: {
   viewItem: any;
   pinned: boolean;
@@ -109,6 +113,7 @@ function PortalResourceCard({
   pinningSupport: any;
   resourceKey: string;
   clusterId: string;
+  resource?: UnifiedResource;
 }) {
   const {
     name,
@@ -128,15 +133,16 @@ function PortalResourceCard({
     // Don't trigger if clicking on checkbox or pin button
     if (
       (e.target as HTMLElement).closest('input[type="checkbox"]') ||
-      (e.target as HTMLElement).closest('[data-testid="pin-button"]')
+      (e.target as HTMLElement).closest('[data-testid="pin-button"]') ||
+      (e.target as HTMLElement).closest('[data-testid="copy-button"]')
     ) {
       return;
     }
 
-    // Extract resource from viewItem and launch it
-    // We need to reconstruct the resource from the viewItem
-    // For now, we'll use a simplified approach
-    // TODO: Extract actual resource object and call launchResource
+    // Launch the resource if available
+    if (resource) {
+      launchResource(resource, clusterId);
+    }
   };
 
   return (
